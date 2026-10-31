@@ -1,7 +1,9 @@
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpMethod;
+import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.handler.BodyHandler;
 
 public class Main {
     public static void main(String[] args) {
@@ -21,6 +23,11 @@ public class Main {
             // 3-4：next() を消してみる
             ctx.next();  // 次のハンドラーへ
         });
+
+        // 4-2：BodyHandlerを追加する
+        //router.route().handler(BodyHandler.create());
+        // 4-7：サイズ制限をかける
+        router.route().handler(BodyHandler.create().setBodyLimit(1024 * 100));
 
         router.get("/").handler(ctx -> ctx.end("Hello Vert.x Web!"));
 
@@ -120,6 +127,62 @@ public class Main {
         });
         router.get("/steps").order(2).handler(ctx -> {
             ctx.response().end("step2\n");
+        });
+
+        // 4-1：BodyHandlerなしで読んでみる
+        router.post("/echo").handler(ctx -> {
+            JsonObject body = ctx.body().asJsonObject();
+            ctx.end("受け取った内容: " + body);
+        });
+
+        // 4-3：JSONを受け取って登録する
+        router.post("/products").handler(ctx -> {
+            // 4-5：壊れたJSONを送ってみる
+            JsonObject body;
+            try {
+                body = ctx.body().asJsonObject();
+            } catch (DecodeException e) {
+                ctx.response().setStatusCode(400);
+                ctx.json(new JsonObject().put("error", "JSONの形式が正しくありません"));
+                return;
+            }
+            if (body == null) {
+                ctx.response().setStatusCode(400);
+                ctx.json(new JsonObject().put("error", "リクエストボディが空です"));
+                return;
+            }
+
+            String name = body.getString("name");
+            Integer price = body.getInteger("price");
+            // 4-4：入力チェックをする
+            if (name == null || name.isBlank()) {
+                ctx.response().setStatusCode(400);
+                ctx.json(new JsonObject().put("error", "nameは必須です"));
+                return;
+            }
+            if (price == null || price < 0) {
+                ctx.response().setStatusCode(400);
+                ctx.json(new JsonObject().put("error", "priceは0以上の数値で指定してください"));
+                return;
+            }
+
+            JsonObject created = new JsonObject()
+                    .put("id", 1)
+                    .put("name", name)
+                    .put("price", price);
+
+            ctx.response().setStatusCode(201);
+            ctx.json(created);
+        });
+
+        // 4-6：JSON以外を受け付けない
+        router.post("/strict").consumes("application/json").handler(ctx ->
+                ctx.json(ctx.body().asJsonObject()));
+
+        // 4-8：フォームの値を読む
+        router.post("/form").handler(ctx -> {
+            String name = ctx.request().getFormAttribute("name");
+            ctx.end("フォームから受け取った名前: " + name);
         });
 
         vertx.createHttpServer()
